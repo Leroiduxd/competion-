@@ -10,7 +10,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 /* ---------- Blockchain ---------- */
 const RPC_URL         = 'https://testnet.dplabs-internal.com';
-const CONTRACT_ADDRESS = '0xbb24da1f6aaa4b0cb3ff9ae971576790bb65673c';
+const CONTRACT_ADDRESS = '0x9a88d07850723267db386c681646217af7e220d7';
 
 const ABI = [
   {
