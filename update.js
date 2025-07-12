@@ -3,66 +3,59 @@ import { ethers } from 'ethers';
 import dotenv from 'dotenv';
 dotenv.config();
 
+/* ---------- Supabase ---------- */
 const supabaseUrl = 'https://yaikidiqvtxiqtrawvgf.supabase.co';
 const supabaseKey = process.env.SUPABASE_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-const RPC_URL = "https://testnet.dplabs-internal.com";
-const CONTRACT_ADDRESS = "0xbb24da1f6aaa4b0cb3ff9ae971576790bb65673c";
+/* ---------- Blockchain ---------- */
+const RPC_URL         = 'https://testnet.dplabs-internal.com';
+const CONTRACT_ADDRESS = '0xbb24da1f6aaa4b0cb3ff9ae971576790bb65673c';
 
-const ABI = [{
-  "inputs": [{"internalType": "address", "name": "user", "type": "address"}],
-  "name": "getClosedPositions",
-  "outputs": [{
-    "components": [
-      {"internalType": "address", "name": "user", "type": "address"},
-      {"internalType": "uint256", "name": "assetIndex", "type": "uint256"},
-      {"internalType": "uint256", "name": "entryPrice", "type": "uint256"},
-      {"internalType": "uint256", "name": "closePrice", "type": "uint256"},
-      {"internalType": "uint256", "name": "usdSize", "type": "uint256"},
-      {"internalType": "uint256", "name": "leverage", "type": "uint256"},
-      {"internalType": "bool", "name": "isLong", "type": "bool"},
-      {"internalType": "int256", "name": "pnl", "type": "int256"},
-      {"internalType": "uint256", "name": "openTimestamp", "type": "uint256"},
-      {"internalType": "uint256", "name": "closeTimestamp", "type": "uint256"},
-      {"internalType": "string", "name": "reason", "type": "string"}
-    ],
-    "internalType": "struct Brokex.ClosedPosition[]",
-    "name": "",
-    "type": "tuple[]"
-  }],
-  "stateMutability": "view",
-  "type": "function"
-}];
+const ABI = [
+  {
+    inputs: [{ internalType: 'address', name: 'trader', type: 'address' }],
+    name: 'getTraderPnL',
+    outputs: [{ internalType: 'int256', name: '', type: 'int256' }],
+    stateMutability: 'view',
+    type: 'function'
+  }
+];
 
 const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
+const contract  = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
 
-export async function updateTraders() {
+/* ---------- Core logic ---------- */
+export async function updateTraders () {
+  // 1. Récupérer les adresses à mettre à jour
   const { data: traders, error } = await supabase.from('traders').select('address');
   if (error) {
-    console.error("Error fetching traders:", error);
+    console.error('Erreur Supabase :', error);
     return { success: false, message: error.message };
   }
 
-  for (const trader of traders) {
+  // 2. Pour chaque adresse, appeler getTraderPnL et mettre à jour la table
+  for (const { address } of traders) {
     try {
-      const positions = await contract.getClosedPositions(trader.address);
-      const pnlTotal = positions.reduce((sum, pos) => sum + Number(pos.pnl.toString()), 0);
-      const nbTrades = positions.length;
+      const rawPnl = await contract.getTraderPnL(address); // int256
 
-      await supabase.from('traders').upsert([{
-        address: trader.address,
-        pnl: pnlTotal / 1e6,
-        nb_trades: nbTrades,
-        updated_at: new Date().toISOString()
-      }], { onConflict: ['address'] });
+      // Les contrats retournent souvent des valeurs 1e6 / 1e18 : adapter si besoin
+      const pnl = Number(rawPnl.toString()) / 1e6;
 
-      console.log(`Updated ${trader.address}: PnL=${pnlTotal / 1e6}, Trades=${nbTrades}`);
+      await supabase.from('traders').upsert(
+        [{
+          address,
+          pnl,
+          updated_at: new Date().toISOString()
+        }],
+        { onConflict: ['address'] }
+      );
+
+      console.log(`✔️ ${address} – PnL = ${pnl}`);
     } catch (err) {
-      console.error(`Error processing ${trader.address}:`, err.message);
+      console.error(`❌ ${address} –`, err.message);
     }
   }
 
-  return { success: true, message: "All traders updated." };
+  return { success: true, message: 'Tous les traders sont mis à jour.' };
 }
